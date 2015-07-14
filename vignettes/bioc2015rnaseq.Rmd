@@ -212,9 +212,9 @@ See the `r Biocpkg("GenomicFeatures")` packge for more details.
 
 <a id="count"></a>
 
-## Counting reads
+## Creating an RNA-seq count table
 
-We will now show how to count reads which can be uniquely assigned
+We will now show how to count reads/fragments which can be uniquely assigned
 to the exons of a gene, across all the genes and all the samples.
 Besides the main count matrix, which we will use later, the
 `r Biocexptpkg("airway")` package also contains a small subset
@@ -244,7 +244,7 @@ to print the result in addition to storing it to the
 
 ```{r}
 csvfile <- file.path(dir,"sample_table.csv")
-(sampleTable <- read.csv(csvfile,row.names=1))
+( sampleTable <- read.csv(csvfile,row.names=1) )
 ```
 
 Using the `Run` column in the sample table, we construct the full
@@ -588,7 +588,16 @@ We will continue with the object generated from the
 
 <a id="eda"></a>
 
-# Visually exploring the dataset
+## Exploratory analysis and visualization
+
+There are two separate paths in this workflow, the one we will
+see first involves **transformations of the counts**
+in order to visualizally explore sample relationships.
+
+In the second part, we will go back to the orignal raw counts
+for **statistical testing**. This is critical because
+the statistical testing methods rely on original data
+(not scaled or transformed) for calculating the precision of measurements. 
 
 ## The rlog transformation
 
@@ -815,7 +824,12 @@ qplot(X1,X2,color=dex,shape=cell,data=mds)
 
 <a id="de"></a>
 
-# Differential expression analysis
+# Differential gene expression testing
+
+Now, suppose we want to do statistical testing on this dataset
+to investigate which, if any, genes show evidence of
+differential expression due to treatment, and controlling
+for cell line.
 
 It will be convenient to make sure that `untrt` is the first level in
 the `dex` factor, so that the default log2 fold changes are calculated
@@ -826,10 +840,6 @@ you tell them). The function *relevel* achieves this:
 ```{r}
 dds$dex <- relevel(dds$dex, "untrt")
 ```
-
-In addition, if you have at any point subset the columns of the
-*DESeqDataSet* you should similarly call *droplevels* on the factors
-if the subsetting has resulted in some levels having 0 samples.
 
 ## Running the pipeline
 
@@ -861,7 +871,7 @@ will extract the results table for a comparison of the last level over
 the first level.
 
 ```{r}
-(res <- results(dds))
+( res <- results(dds) )
 ```
 
 As `res` is a *DataFrame* object, it carries metadata
@@ -949,7 +959,7 @@ level in the denominator.  Here we extract results for the log2 of the
 fold change of one cell line over another:
 
 ```{r}
-(res.cell <- results(dds, contrast=c("cell", "N061011", "N61311")))
+( res.cell <- results(dds, contrast=c("cell", "N061011", "N61311")) )
 ```
 
 
@@ -1023,7 +1033,7 @@ order is to add a `-` sign. Alternatively, you can use the argument
 head(resSig[ order( -resSig$log2FoldChange ), ])
 ```
 
-# Diagnostic plots
+## Diagnostic plots
 
 A quick way to visualize the counts for a particular gene is to use
 the *plotCounts* function, which takes as arguments the
@@ -1103,8 +1113,7 @@ of 0.01 means that the gene's expression tends to differ by typically
 sqrt(0.01) = 10% between samples of the same treatment group. For
 weak genes, the Poisson noise is an additional source of noise.
 
-The function *plotDispEsts* visualizes *DESeq2*'s dispersion
-estimates: 
+The function *plotDispEsts* visualizes *DESeq2*'s dispersion estimates: 
 
 ```{r plotdispests}
 plotDispEsts(dds)
@@ -1134,7 +1143,7 @@ This plot becomes a bit smoother by excluding genes with very small counts:
 hist(res$pvalue[res$baseMean > 1], breaks=20, col="grey50", border="white")
 ```
 
-# Gene clustering
+## Gene clustering
 
 In the sample distance heatmap made previously, the dendrogram at the
 side shows us a hierarchical clustering of the samples. Such a
@@ -1169,68 +1178,9 @@ a set of genes at the top of the heatmap are separating the N061011
 cell line from the others. At the bottom of the heatmap, we see a set
 of genes for which the treated samples have higher gene expression.
 
-# Independent filtering
-
-The MA plot highlights an important property of RNA-Seq data.  For
-weakly expressed genes, we have no chance of seeing differential
-expression, because the low read counts suffer from so high Poisson
-noise that any biological effect is drowned in the uncertainties from
-the read counting.  We can also show this by examining the ratio of
-small *p* values (say, less than, 0.01) for genes binned by mean
-normalized count:
-
-```{r sensitivityovermean, fig.height=4}
-# create bins using the quantile function
-qs <- c(0, quantile(res$baseMean[res$baseMean > 0], 0:7/7))
-# cut the genes into the bins
-bins <- cut(res$baseMean, qs)
-# rename the levels of the bins using the middle point
-levels(bins) <- paste0("~",round(.5*qs[-1] + .5*qs[-length(qs)]))
-# calculate the ratio of $p$ values less than .01 for each bin
-ratios <- tapply(res$pvalue, bins, function(p) mean(p < .01, na.rm=TRUE))
-# plot these ratios
-barplot(ratios, xlab="mean normalized count", ylab="ratio of small p values")
-```
-
-At first sight, there may seem to be little benefit in filtering out
-these genes. After all, the test found them to be non-significant
-anyway. However, these genes have an influence on the multiple testing
-adjustment, whose performance improves if such genes are removed. By
-removing the weakly-expressed genes from the input to the FDR
-procedure, we can find more genes to be significant among those which
-we keep, and so improved the power of our test. This approach is known
-as *independent filtering*.
-
-The *DESeq2* software automatically performs independent filtering
-which maximizes the number of genes which will have adjusted *p* value
-less than a critical value (by default, `alpha` is set to 0.1).  This
-automatic independent filtering is performed by, and can be controlled
-by, the *results* function.  We can observe how the number of
-rejections changes for various cutoffs based on mean normalized
-count. The following optimal threshold and table of possible values is
-stored as an attribute of the results object.
-
-```{r filterthreshold}
-attr(res,"filterThreshold")
-plot(attr(res,"filterNumRej"),type="b",
-     xlab="quantiles of 'baseMean'",
-     ylab="number of rejections")
-```
-
-The term *independent* highlights an important caveat. Such filtering
-is permissible only if the filter criterion is independent of the
-actual test statistic. Otherwise, the filtering would invalidate the
-test and consequently the assumptions of the BH procedure.  This is
-why we filtered on the average over *all* samples: this filter is
-blind to the assignment of samples to the treatment and control group
-and hence independent. The independent filtering software used inside
-*DESeq2* comes from the `r Biocpkg("genefilter")` package, which
-contains a reference to a paper describing the statistical foundation
-for independent filtering.
-
 <a id="annotate"></a>
 
-# Annotation packages to add gene names
+## Annotation of results tables
 
 Our result table only uses Ensembl gene IDs, but gene names may be
 more informative. Bioconductor's annotation packages help with mapping
@@ -1276,7 +1226,7 @@ resOrdered <- res[order(res$padj),]
 head(resOrdered)
 ```
 
-# Exporting plain text results
+## Exporting plain text results
 
 You can easily save the results table in a CSV file, which you can
 then load with a spreadsheet program such as Excel. The call to
@@ -1290,7 +1240,7 @@ write.csv(as.data.frame(resOrdered), file="results.csv")
 
 <a id="report"></a>
 
-# ReportingTools output (dynamic HTML documents)
+## Generation of HTML reports
 
 Another more sophisticated package for exporting results from various
 Bioconductor analysis packages is the `r Biocpkg("ReportingTools")` package.
@@ -1324,7 +1274,9 @@ url <- finish(htmlRep)
 browseURL(url)
 ```
 
-We can now open in a web browser the file `./reports/airway_DE_report.html`. This gives a readable report with pagination, as well as sortable, filterable numeric columns, and a search function.
+We can now open in a web browser the file `./reports/airway_DE_report.html`.
+This gives a readable report with pagination, as well as sortable,
+filterable numeric columns, and a search function.
 
 We can also use some of the built-in functionality of *ReportingTools*
 for *DESeq2* objects (there are similar functions for *edgeR* and *limma*
@@ -1365,9 +1317,9 @@ browseURL(url)
 
 <a id="align"></a>
 
-# Examining RNA-seq alignments 
+## Examining RNA-seq alignments 
 
-# Session information
+## Session information
 
 As last part of this document, we call the function *sessionInfo*,
 which reports the version numbers of R and all the packages used in
