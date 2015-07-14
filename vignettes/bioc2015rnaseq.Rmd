@@ -1,27 +1,20 @@
 ---
-title: "End-to-end RNA-Seq workflow"
+title: "Differential expression, manipulation, and visualization of RNA-seq reads"
 author: "Michael Love, Simon Anders, Wolfgang Huber"
-date: "16 June 2015" 
+date: "21 July 2015" 
 ---
 
-<!-- to compile this:
-     library("knitr"); knit2html("rnaseqCSAMA.Rmd")
--->
-
-<!--
-     # a list of all required libraries:
-     reqlibs = sub(".*library\\(\"(.*?)\"\\).*","\\1",grep("library\\(",readLines("rnaseqCSAMA.Rmd"),value=TRUE))
-     find.package(reqlibs)
--->
-
-```{r style, echo=FALSE, message=FALSE, warning=FALSE, results="asis"}
+```{r opts, echo=FALSE, results="hide"}
 library("knitr")
+opts_chunk$set(error=FALSE)
+```
+
+```{r style, echo=FALSE, results="asis"}
 library("BiocStyle")
-opts_chunk$set(message = FALSE, error = TRUE, warning = TRUE)
 BiocStyle::markdown()
 ```
 
-# End-to-end RNA-Seq workflow
+# Differential expression, manipulation, and visualization of RNA-seq reads
 
 Michael Love [1], Simon Anders [2], Wolfgang Huber [2]
 
@@ -30,31 +23,56 @@ Harvard T.H. Chan School of Public Health, Boston, US;
 
 [2] European Molecular Biology Laboratory (EMBL), Heidelberg, Germany.
 
+### Link to more material online
+
+This workflow is an abridged/modified version of the longer
+[RNA-seq workflow](http://bioconductor.org/help/workflows/rnaseqGene/)
+available under [Workflows](http://bioconductor.org/help/workflows/)
+on the Bioconductor website.
+
 # Contents
 
-* [Counting reads](#count)
-* [Building a DESeqDataSet](#construct)
-* [Visual exploration](#eda)
-* [Differential expression](#de)
-* [Diagnostic plots](#diagnostic)
-* [Annotation](#annotate)
-* [ReportingTools](#report)
-* [Ease of exchanging methods](#methods)
+Here we will cover basic steps in RNA-seq analysis
+using a variety of Bioconductor packages:
 
-# Introduction
+* [Loading gene annotations](#gene) (GenomicFeatures)
+* [Creating an RNA-seq count table](#count) (GenomicAlignments, Rsubread)
+* [Exploratory analysis and visualization](#eda) (DESeq2)
+* [Differential expression testing](#de) (DESeq2)
+* [Annotation of results tables](#annotate) (AnnotationDbi)
+* [Generation of HTML reports](#report) (ReportingTools)
+* Examining RNA-seq alignments (GenomicAlignments, Gviz)
+
+## Introduction
 
 This lab will walk you through an end-to-end RNA-Seq differential
 expression workflow, using `r Biocpkg("DESeq2")` along with other
 Bioconductor packages.  We will start from the FASTQ files, show how
 these were aligned to the reference genome, prepare gene expression
-values as a count matrix by counting the sequenced fragments, perform
-exploratory data analysis (EDA), perform differential gene expression
-analysis with *DESeq2*, and visually explore the results.
+values as a count matrix by counting the aligned fragments, perform
+exploratory data analysis (EDA) and differential gene expression
+testing, and annotation/export of results.
 
 We note that a number of other Bioconductor packages can also be used for
 statistical inference of differential expression at the gene level including
 `r Biocpkg("edgeR")`, `r Biocpkg("BaySeq")`, `r Biocpkg("DSS")` and
 `r Biocpkg("limma")`.
+
+## Finding help
+
+Remember, if you have a question about a particular function,
+for example, `DESeq()`, you can read about the arguments and details with:
+
+```{r, eval=FALSE}
+?DESeq
+```
+
+All Bioconductor packages also come with descriptive vignettes.
+The DESeq2 vignette can be accessed with:
+
+```{r, eval=FALSE}
+browseVignettes("DESeq2")
+```
 
 If you have questions about this workflow, please post them to the
 [Bioconductor support site](https://support.bioconductor.org/).
@@ -65,14 +83,15 @@ for crafting an optimal question for the support site.
 
 ## Experimental data
 
-The data used in this workflow is an RNA-Seq experiment of airway
-smooth muscle cells treated with dexamethasone, a synthetic
-glucocorticoid steroid with anti-inflammatory effects. Glucocorticoids
+The data used in this workflow consists of RNA-seq samples of
+human **airway smooth muscle cells** treated with dexamethasone,
+a synthetic **glucocorticoid steroid** with
+anti-inflammatory effects. Glucocorticoids
 are used, for example, in asthma patients to prevent or reduce
-inflammation of the airways. In the experiment, four primary human
-airway smooth muscle cell lines were treated with 1 micromolar
-dexamethasone for 18 hours. For each of the four cell lines, we have a
-treated and an untreated sample. The reference for the experiment is:
+inflammation of the airways. In this experiment, we have two
+samples each from **four cell lines**:
+one sample was untreated, while another sample was treated with 1 micromolar
+dexamethasone for 18 hours. The publication for the experiment is:
 
 Himes BE, Jiang X, Wagner P, Hu R, Wang Q, Klanderman B, Whitaker RM,
 Duan Q, Lasky-Su J, Nikolos C, Jester W, Johnson M, Panettieri R Jr,
@@ -83,61 +102,70 @@ Cytokine Function in Airway Smooth Muscle Cells." PLoS One. 2014 Jun
 PMID: [24926665](http://www.ncbi.nlm.nih.gov/pubmed/24926665).
 GEO: [GSE52778](http://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE52778).
 
-## Preparing count matrices
+## The biological question
 
-As input, the *DESeq2* package expects count data as obtained,
-e.g., from RNA-Seq or another high-throughput sequencing experiment,
+Our aim in this workflow is to identify difference due to
+treatment, compared to control samples, while controlling for
+the differences across cell line.
+
+## Count matrix
+
+As input, the *DESeq2* package expects *count data* as obtained,
+e.g., from RNA-seq or another high-throughput sequencing experiment,
 in the form of a matrix of integer values. The value in the *i*-th row
-and the *j*-th column of the matrix tells how many reads have been
-mapped to gene *i* in sample *j*.  Analogously, for other types of
-assays, the rows of the matrix might correspond e.g., to binding
-regions (with ChIP-Seq) or peptide sequences (with quantitative mass
-spectrometry).
-
+and the *j*-th column of the matrix tells how many reads
+(or fragments in a paired-end experiment) can be 
+uniquely assigned to gene *i* in sample *j*.
 The count values must be raw counts of sequencing reads. This is
 important for *DESeq2*'s statistical model to hold, as only the
 actual counts allow assessing the measurement precision
-correctly. Hence, please do not supply other quantities, such as
-(rounded) normalized counts, or counts of covered base pairs -- this
-will only lead to nonsensical results.
+correctly. 
 
-## Aligning reads to a reference
+## Aligning reads
 
-The computational analysis of an RNA-Seq experiment begins earlier:
-what we get from the sequencing machine is a set of FASTQ files that
-contain the nucleotide sequence of each read and a quality score at
-each position.  These reads must first be aligned to a reference
-genome or transcriptome.  It is important to know if the sequencing
-experiment was single-end or paired-end, as the alignment software
-will require the user to specify both FASTQ files for a paired-end
-experiment. The output of this alignment step is commonly stored in a
-file format called [SAM/BAM](http://samtools.github.io/hts-specs).
+We will assume we have already aligned the reads to the genome
+and have **BAM files** for each of the samples. In order to see
+the code which was used for this experiment to align the paired-end
+reads to the genome, see the
+[full workflow](http://bioconductor.org/help/workflows/rnaseqGene/)
+or the [vignette](http://bioconductor.org/packages/release/data/experiment/vignettes/airway/inst/doc/airway.html)
+for the airway data package.
 
-A number of software programs exist to align reads to the reference
-genome, and the development is too rapid for this document to provide
-an up-to-date list. We recommend consulting benchmarking papers that
-discuss the advantages and disadvantages of each software, which
-include accuracy, ability to align reads over splice junctions, speed,
-memory footprint, and many other features.
+<a id="gene"></a>
 
-The reads for this experiment were aligned to the Ensembl release 75 human reference
-genome using the
-[STAR read aligner](https://code.google.com/p/rna-star/):
+# Loading gene annotations
 
-```
-for f in `cat files`; do STAR --genomeDir ../STAR/ENSEMBL.homo_sapiens.release-75 \
---readFilesIn fastq/$f\_1.fastq fastq/$f\_2.fastq \
---runThreadN 12 --outFileNamePrefix aligned/$f.; done
-```
+We need to read in the gene model which will be used for
+counting reads. We will read the gene model from a
+[GTF file](http://www.ensembl.org/info/website/upload/gff.html), using
+*makeTxDbFromGFF* from the `r Biocpkg("GenomicFeatures")`
+package. GTF files can be downloaded from
+Ensembl's FTP site or other gene model repositories.
+A *TranscriptDb* object is a database which can be used to
+generate a variety of range-based objects, such as exons, transcripts,
+and genes. We will want to make a list of exons grouped by gene.
 
-[SAMtools](http://samtools.sourceforge.net/) was used to generate BAM files.
+There are other options for constructing a *TranscriptDB*.
+For the *known genes* track from the UCSC Genome Browser,
+one can use the pre-built Transcript DataBase:
+`r Biocannopkg("TxDb.Hsapiens.UCSC.hg19.knownGene")`.
+The *makeTxDbFromBiomart* function can be used to automatically
+pull a gene model from Biomart. 
 
-```
-cat files | parallel -j 7 samtools view -bS aligned/{}.Aligned.out.sam -o aligned/{}.bam
+```{r}
+library("GenomicFeatures")
 ```
 
-The BAM files for a number of sequencing runs can then be used to
-generate count matrices, as described in the following section.
+```{r}
+gtffile <- file.path(dir, "Homo_sapiens.GRCh37.75_subset.gtf")
+(txdb <- makeTxDbFromGFF(gtffile, format="gtf"))
+```
+
+The following line produces a *GRangesList* of all the exons grouped by gene.
+
+```{r}
+(genes <- exonsBy(txdb, by="gene"))
+```
 
 <a id="count"></a>
 
@@ -186,20 +214,6 @@ csvfile <- file.path(dir,"sample_table.csv")
 (sampleTable <- read.csv(csvfile,row.names=1))
 ```
 
-Once the reads have been aligned, there are a number of tools which
-can be used to count the number of reads which can be unambiguously
-assigned to genomic features for each sample. These often take as
-input SAM/BAM alignment files and a file specifying the genomic
-features, e.g. a GFF3 or GTF file specifying the gene models.
-
-The following tools can be used generate count matrices:
-
-function            | package                                              | framework      | output                 | *DESeq2* input function
---------------------|------------------------------------------------------|----------------|------------------------|-------------------------
-*summarizeOverlaps* | `r Biocpkg("GenomicAlignments")`                     | R/Bioconductor | *SummarizedExperiment* | *DESeqDataSet*
-*featureCounts*     | `r Biocpkg("Rsubread")`                              | R/Bioconductor | matrix                 | *DESeqDataSetFromMatrix*
-*htseq-count*       | [HTSeq](http://www-huber.embl.de/users/anders/HTSeq) | Python         | files                  | *DESeqDataSetFromHTSeq* 
-
 Using the `Run` column in the sample table, we construct the full
 paths to the files we want to perform the counting operation on:
 
@@ -209,7 +223,7 @@ filenames <- file.path(dir, paste0(sampleTable$Run, "_subset.bam"))
 
 We indicate in Bioconductor that these files are BAM files using the
 *BamFileList* function. Here we also specify details about how the BAM files should
-be treated, e.g., only process 2000000 reads at a time.
+be treated, e.g., only process 2 million reads at a time.
 
 ```{r}
 library("Rsamtools")
@@ -226,37 +240,6 @@ We can check the chromosome names in the alignment files like so:
 seqinfo(bamfiles[1])
 ```
 
-Next, we need to read in the gene model which will be used for
-counting reads. We will read the gene model from a
-[GTF file](http://www.ensembl.org/info/website/upload/gff.html), using
-*makeTxDbFromGFF* from the `r Biocpkg("GenomicFeatures")`
-package. GTF files can be downloaded from
-Ensembl's FTP site or other gene model repositories.
-A *TranscriptDb* object is a database which can be used to
-generate a variety of range-based objects, such as exons, transcripts,
-and genes. We will want to make a list of exons grouped by gene.
-
-There are other options for constructing a *TranscriptDB*.
-For the *known genes* track from the UCSC Genome Browser,
-one can use the pre-built Transcript DataBase:
-`r Biocannopkg("TxDb.Hsapiens.UCSC.hg19.knownGene")`.
-The *makeTxDbFromBiomart* function can be used to automatically
-pull a gene model from Biomart. 
-
-```{r}
-library("GenomicFeatures")
-```
-
-```{r}
-gtffile <- file.path(dir,"Homo_sapiens.GRCh37.75_subset.gtf")
-(txdb <- makeTxDbFromGFF(gtffile, format="gtf"))
-```
-
-The following line produces a *GRangesList* of all the exons grouped by gene.
-
-```{r}
-(genes <- exonsBy(txdb, by="gene"))
-```
 
 After these preparations, the actual counting is easy. The function
 *summarizeOverlaps* from the `r Biocpkg("GenomicAlignments")`
@@ -360,9 +343,7 @@ We will continue, using `r Biocpkg("DESeq2")`. The *SummarizedExperiment* object
 all we need to start our analysis. In the following section we will
 show how to use it to create the data object used by `r Biocpkg("DESeq2")`.
 
-<a id="construct"></a>
-
-# The *DESeqDataSet*, column metadata, and the design formula
+## The *DESeqDataSet*, column metadata, and the design formula
 
 Bioconductor software packages often define and use a custom class for
 their data object, which makes sure that all the needed data slots are
@@ -984,8 +965,6 @@ order is to add a `-` sign. Alternatively, you can use the argument
 head(resSig[ order( -resSig$log2FoldChange ), ])
 ```
 
-<a id="diagnostic"></a>
-
 # Diagnostic plots
 
 A quick way to visualize the counts for a particular gene is to use
@@ -1283,7 +1262,8 @@ htmlRep <- HTMLReport(shortName = "airway_DE_report",
                       title = "Airway differential expression analysis 06/2015",
                       reportDirectory = "./reports")
 publish(resTop, htmlRep)
-finish(htmlRep)
+url <- finish(htmlRep)
+browseURL(url)
 ```
 
 We can now open in a web browser the file `./reports/airway_DE_report.html`. This gives a readable report with pagination, as well as sortable, filterable numeric columns, and a search function.
@@ -1321,134 +1301,8 @@ htmlRep <- HTMLReport(shortName = "airway_DE_report",
 publish(resReport, htmlRep, DataSet=ddsReport, 
         annotation.db="org.Hs.eg.db", 
         n=50, factor=dds$dex)
-finish(htmlRep)
-```
-
-<a id="methods"></a>
-
-# Ease of exchanging methods
-
-It is easy, within Bioconductor, to use different
-statistical methods for differential gene expression.
-Here we will compare the *DESeq2* results with that
-from two other popular packages, *edgeR* and *limma* with the 
-*voom* transformation. 
-
-In order to make the results more comparable across packages
-we will not use the independent filtering function of *DESeq2*.
-We therefore need to set a filter on the mean of normalized counts,
-to remove the genes from analysis which have very small counts.
-
-```{r}
-# careful when filtering if groups are not balanced
-filter <- rowMeans(assay(airway)) > 5
-airwayFilt <- airway[ filter, ]
-```
-
-Now we call *DESeq* and *results* on the filtered
-dataset:
-
-```{r}
-dds <- DESeqDataSet(airwayFilt, design = ~ cell + dex)
-dds <- DESeq(dds)
-res <- results(dds, independentFiltering=FALSE)
-```
-
-The steps for the *edgeR* software are similar (estimation of 
-factors to account for library size, estimation of dispersion 
-and testing):
-
-```{r}
-library("edgeR")
-coldata <- as.data.frame(colData(dds))
-design <- model.matrix(~ cell + dex, data=coldata)
-dgel <- DGEList(assay(airwayFilt))
-dgel <- calcNormFactors(dgel)
-dgel <- estimateGLMCommonDisp(dgel,design=design)
-dgel <- estimateGLMTrendedDisp(dgel,design=design)
-dgel <- estimateGLMTagwiseDisp(dgel,design=design)
-edgerfit <- glmFit(dgel,design=design)
-lrt <- glmLRT(edgerfit, coef=5)
-tt <- topTags(lrt, n=nrow(dgel), sort.by="none")
-```
-
-The *limma+voom* pipeline involves the *voom* function
-which transforms the data to the log scale and determines
-the dependence of the variance of log counts over the mean.
-
-```{r}
-library("limma")
-dgel.voom <- DGEList(assay(airwayFilt))
-dgel.voom <- calcNormFactors(dgel.voom)
-v <- voom(dgel.voom,design,plot=FALSE)
-vfit <- lmFit(v,design)
-vfit <- eBayes(vfit)
-lvtt <- topTable(vfit, coef=5, n=nrow(dgel.voom), sort.by="none")
-```
-
-We can now compare the results from the three packages, 
-thresholding at a given FDR value. The three packages
-are highly consistent in the set of genes with very low 
-FDR (1%).
-
-```{r}
-alpha <- 0.01
-table("deseq2"=res$padj < alpha, "edger"=tt$table$FDR < alpha, "limma"=lvtt$adj.P.Val < alpha)
-```
-
-We can visualize the overlap more easily using a barplot.
-The following function will convert the table into a barplot:
-
-```{r}
-bartab <- function(x,y,z,names,skipNone=FALSE,...) {
-  x <- factor(x,c("FALSE","TRUE"))
-  y <- factor(y,c("FALSE","TRUE"))
-  z <- factor(z,c("FALSE","TRUE"))
-  tabs <- as.vector(table(x, y, z))
-  names(tabs) <- c("none",names[1],names[2],paste(names[1:2],collapse="+"),
-                   names[3],paste(names[c(1,3)],collapse="+"),
-                   paste(names[2:3],collapse="+"),"all")
-  tabs <- tabs[c(1,2,3,5,4,6,7,8)]
-  if (skipNone) {
-    tabs <- tabs[-1]
-  }
-  barplot(tabs, ...)
-}
-```
-
-Calling that function:
-
-```{r}
-par(mar=c(5,8,3,3))
-bartab(res$padj < alpha, tt$table$FDR < alpha, lvtt$adj.P.Val < alpha, c("DESeq2","edgeR","limma"), main="FDR 1%", horiz=TRUE, las=1)
-```
-
-We can also test for log fold changes higher than 
-a threshold, and compare these sets across software 
-packages:
-
-```{r}
-# testing against a threshold
-# DESeq2
-lfc <- 1
-resLFC <- results(dds, independentFiltering=FALSE, lfcThreshold=lfc)
-# edgeR 
-tr <- glmTreat(edgerfit, coef=5, lfc=lfc)
-ttLFC <- topTags(tr, n=nrow(dgel), sort.by="none")
-# limma + voom
-vtr <- treat(vfit, lfc=lfc)
-lvttLFC <- topTreat(vtr, coef=5, n=nrow(dgel.voom), sort.by="none")
-```
-
-Again, many of the genes are in the intersection of the 
-three packages:
-
-```{r}
-par(mar=c(5,8,3,3))
-alpha <- 0.1
-bartab(resLFC$padj < alpha, ttLFC$table$FDR < alpha, lvttLFC$adj.P.Val < alpha,
-       c("DESeq2","edgeR","limma"), skipNone=TRUE,
-       main="LFC > 1: FDR 10%", horiz=TRUE, las=1)
+url <- finish(htmlRep)
+browseURL(url)
 ```
 
 # Session information
