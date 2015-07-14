@@ -16,12 +16,14 @@ BiocStyle::markdown()
 
 # Differential expression, manipulation, and visualization of RNA-seq reads
 
-Michael Love [1], Simon Anders [2], Wolfgang Huber [2]
+Michael Love [1], Simon Anders [2], Wolfgang Huber [3]
 
 [1] Department of Biostatistics, Dana-Farber Cancer Institute and
 Harvard T.H. Chan School of Public Health, Boston, US;
 
-[2] European Molecular Biology Laboratory (EMBL), Heidelberg, Germany.
+[2] Institute for Molecular Medicine Finland (FIMM), Helsinki, Finland;
+
+[3] European Molecular Biology Laboratory (EMBL), Heidelberg, Germany.
 
 ### Link to more material online
 
@@ -30,7 +32,7 @@ This workflow is an abridged/modified version of the longer
 available under [Workflows](http://bioconductor.org/help/workflows/)
 on the Bioconductor website.
 
-# Contents
+## Contents
 
 Here we will cover basic steps in RNA-seq analysis
 using a variety of Bioconductor packages:
@@ -41,18 +43,12 @@ using a variety of Bioconductor packages:
 * [Differential expression testing](#de) (DESeq2)
 * [Annotation of results tables](#annotate) (AnnotationDbi)
 * [Generation of HTML reports](#report) (ReportingTools)
-* Examining RNA-seq alignments (GenomicAlignments, Gviz)
+* [Examining RNA-seq alignments](#align) (GenomicAlignments, Gviz)
 
 ## Introduction
 
-This lab will walk you through an end-to-end RNA-Seq differential
-expression workflow, using `r Biocpkg("DESeq2")` along with other
-Bioconductor packages.  We will start from the FASTQ files, show how
-these were aligned to the reference genome, prepare gene expression
-values as a count matrix by counting the aligned fragments, perform
-exploratory data analysis (EDA) and differential gene expression
-testing, and annotation/export of results.
-
+This lab will walk you through an RNA-Seq differential expression workflow,
+using `r Biocpkg("DESeq2")` along with other Bioconductor packages.
 We note that a number of other Bioconductor packages can also be used for
 statistical inference of differential expression at the gene level including
 `r Biocpkg("edgeR")`, `r Biocpkg("BaySeq")`, `r Biocpkg("DSS")` and
@@ -104,9 +100,9 @@ GEO: [GSE52778](http://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE52778).
 
 ## The biological question
 
-Our aim in this workflow is to identify difference due to
-treatment, compared to control samples, while controlling for
-the differences across cell line.
+Our aim in this workflow is to identify **differences in
+gene expression due to treatment**, compared to control samples,
+while controlling for the differences across cell line.
 
 ## Count matrix
 
@@ -119,7 +115,11 @@ uniquely assigned to gene *i* in sample *j*.
 The count values must be raw counts of sequencing reads. This is
 important for *DESeq2*'s statistical model to hold, as only the
 actual counts allow assessing the measurement precision
-correctly. 
+correctly.
+
+For more details on why we work with counts, or the statistical
+model underlying the methods, see the
+[DESeq2 paper](http://www.genomebiology.com/2014/15/12/550).
 
 ## Aligning reads
 
@@ -133,54 +133,24 @@ for the airway data package.
 
 <a id="gene"></a>
 
-# Loading gene annotations
+## Loading gene annotations
 
-We need to read in the gene model which will be used for
-counting reads. We will read the gene model from a
+First we will need to define the genes in which we will
+count the RNA-seq fragments. Our initial goal is to
+construct a *TxDb* object, which contains all the information
+about the exons, transcripts and genes of an organism.
+From this we can pull out the exons associated with each
+gene, which will be used for counting.
+
+We have different options for how we read in the gene model information.
+One option is to read the gene model from a
 [GTF file](http://www.ensembl.org/info/website/upload/gff.html), using
 *makeTxDbFromGFF* from the `r Biocpkg("GenomicFeatures")`
 package. GTF files can be downloaded from
 Ensembl's FTP site or other gene model repositories.
-A *TranscriptDb* object is a database which can be used to
-generate a variety of range-based objects, such as exons, transcripts,
-and genes. We will want to make a list of exons grouped by gene.
 
-There are other options for constructing a *TranscriptDB*.
-For the *known genes* track from the UCSC Genome Browser,
-one can use the pre-built Transcript DataBase:
-`r Biocannopkg("TxDb.Hsapiens.UCSC.hg19.knownGene")`.
-The *makeTxDbFromBiomart* function can be used to automatically
-pull a gene model from Biomart. 
-
-```{r}
-library("GenomicFeatures")
-```
-
-```{r}
-gtffile <- file.path(dir, "Homo_sapiens.GRCh37.75_subset.gtf")
-(txdb <- makeTxDbFromGFF(gtffile, format="gtf"))
-```
-
-The following line produces a *GRangesList* of all the exons grouped by gene.
-
-```{r}
-(genes <- exonsBy(txdb, by="gene"))
-```
-
-<a id="count"></a>
-
-# Counting reads
-
-Besides the main count matrix, which we will use later, the
-`r Biocexptpkg("airway")` package also contains a small subset of the raw
-data, namely eight BAM file each with a subset of the reads. We will
-use these files to demonstrate how a count matrix can be constructed
-from BAM files. Afterwards, we will load the full count matrix
-corresponding to all samples and all data, which is already provided
-in the same package, and will continue the analysis with that full
-table.
-
-We load the data package with the example data:
+We first need to load our data package, which contains the
+GTF file (and small example BAM files and count matrix).
 
 ```{r}
 library("airway")
@@ -191,23 +161,86 @@ computer the files from a package have been installed. Here we ask for
 the full path to the `extdata` directory, which is part of the
 `r Biocexptpkg("airway")` package.
 
+Note that this GTF file only contains a subset of all the genes
+from the 75th Ensembl release.
+
 ```{r}
 dir <- system.file("extdata", package="airway", mustWork=TRUE)
+gtffile <- file.path(dir, "Homo_sapiens.GRCh37.75_subset.gtf")
 ```
 
-In this directory, we find the eight BAM files (and some other files):
+The following line creates the *TxDb*.
+
+```{r}
+library("GenomicFeatures")
+txdb <- makeTxDbFromGFF(gtffile, format="gtf")
+```
+
+Now we can produce a *GRangesList* of all the exons grouped by gene.
+Each element of the list defines all the exons associated with a given
+gene.
+
+```{r}
+ebg <- exonsBy(txdb, by="gene")
+ebg[[1]]
+```
+
+An even faster option for creating a *TxDb*,
+compared to reading in GTF files, is to
+pull down the pre-processed GTF file using `r Biocpkg("AnnotationHub")`.
+Below we show an example of how you could construct a
+*TxDb* for Saccharomyces cerevisiae from the Ensembl resource.
+Browse the *AnnotationHub* vignettes for more details on usage.
+
+```{r annohub}
+library(AnnotationHub)
+ah <- AnnotationHub()
+qu <- query(ah, c("Ensembl","gtf","Saccharomyces cerevisiae","release-80"))
+stopifnot(length(qu) == 1) # check there was only one match
+gtf <- qu[[1]] # this actually downloads the gene model
+txdbFromAHub <- makeTxDbFromGRanges(gtf)
+```
+
+There are still other options for obtaining a *TxDb*.
+For the *known genes* track from the UCSC Genome Browser,
+one can use the pre-built Bioconductor package:
+`r Biocannopkg("TxDb.Hsapiens.UCSC.hg19.knownGene")`.
+The *makeTxDbFromBiomart* and *makeTxDbFromUCSC* functions
+can be used to automatically pull 
+gene models from Biomart and UCSC, respectively.
+See the `r Biocpkg("GenomicFeatures")` packge for more details.
+
+<a id="count"></a>
+
+## Counting reads
+
+We will now show how to count reads which can be uniquely assigned
+to the exons of a gene, across all the genes and all the samples.
+Besides the main count matrix, which we will use later, the
+`r Biocexptpkg("airway")` package also contains a small subset
+of reads from eight *BAM files* (the reads which overlap the
+genes in our subset GTF file).
+
+We will use these BAM files to demonstrate how a count matrix can be constructed.
+Afterwards, we will load the full count matrix
+corresponding to all samples and all data, which is already provided
+in the same package, and will continue the analysis with that full
+table.
+
+In our directory specified earlier, we find the eight BAM files (and some other files):
 
 ```{r}
 list.files(dir)
 ```
 
-Typically, we have a table with experimental metadata for our
-samples. For your own project, you might create such a comma-separated
-value (CSV) file using a text editor or spreadsheet software such as Excel.
+Typically, we have a **table with experimental metadata for our samples**.
+For your own project, you might create such a comma-separated
+value (CSV) file using a text editor or spreadsheet software such as Excel.=
+We can load such a file with the function *read.csv*.
 
-We load this file with *read.csv*. The parentheses around the last
-line are used to print the result in addition to storing it to the
-`sampleTable` object.
+(The parentheses around the last line are used
+to print the result in addition to storing it to the
+`sampleTable` object.)
 
 ```{r}
 csvfile <- file.path(dir,"sample_table.csv")
@@ -222,7 +255,8 @@ filenames <- file.path(dir, paste0(sampleTable$Run, "_subset.bam"))
 ```
 
 We indicate in Bioconductor that these files are BAM files using the
-*BamFileList* function. Here we also specify details about how the BAM files should
+*BamFileList* function. Here we can optionally also
+specify details about how the BAM files should
 be treated, e.g., only process 2 million reads at a time.
 
 ```{r}
@@ -240,7 +274,6 @@ We can check the chromosome names in the alignment files like so:
 seqinfo(bamfiles[1])
 ```
 
-
 After these preparations, the actual counting is easy. The function
 *summarizeOverlaps* from the `r Biocpkg("GenomicAlignments")`
 package will do this. This produces a *SummarizedExperiment*
@@ -255,8 +288,11 @@ the *register* and *MulticoreParam* functions from the
 library("GenomicAlignments")
 ```
 
+The result of the counting call will be a *SummarizedExperiment*
+object, explained in a section below.
+
 ```{r}
-se <- summarizeOverlaps(features=genes, reads=bamfiles,
+se <- summarizeOverlaps(features=ebg, reads=bamfiles,
                         mode="Union",
                         singleEnd=FALSE,
                         ignore.strand=TRUE,
@@ -270,11 +306,24 @@ summarizeOverlaps" vignette for the `r Biocpkg("GenomicAlignments")`
 package. Setting `singleEnd` to `FALSE` indicates that the experiment
 produced paired-end reads, and we want to count a pair of reads only once
 toward the read count for a gene.
+
 In order to produce correct counts, it is important to know if the
 RNA-Seq experiment was strand-specific or not. This experiment was not
 strand-specific so we set `ignore.strand` to `TRUE`.
 The `fragments` argument can be used when `singleEnd=FALSE`
 to specify if unpaired reads should be counted (yes if `fragments=TRUE`).
+
+## SummarizedExperiment
+
+Here we show the component parts of a *SummarizedExperiment* object,
+and also its subclasses, such as the *DESeqDataSet* which is
+explained in the next section. The `assay(s)` (pink block) contains
+the matrix (or matrices) of summarized values, the `rowRanges` (blue
+block) contains information about the genomic ranges, and the
+`colData` (green block) contains information about the samples or
+experiments. The highlighted line in each block represents the first
+row (note that the first row of `colData` lines up with the first
+column of the `assay`.
 
 ```{r sumexp, echo=FALSE}
 par(mar=c(0,0,0,0))
@@ -292,17 +341,7 @@ polygon(c(45,47,47,45),c(75,75,90,90),col="palegreen3",border=NA)
 text(62.5,82.5,"colData")
 ```
 
-Here we show the component parts of a *SummarizedExperiment* object,
-and also its subclasses, such as the *DESeqDataSet* which is
-explained in the next section. The `assay(s)` (pink block) contains
-the matrix (or matrices) of summarized values, the `rowRanges` (blue
-block) contains information about the genomic ranges, and the
-`colData` (green block) contains information about the samples or
-experiments. The highlighted line in each block represents the first
-row (note that the first row of `colData` lines up with the first
-column of the `assay`.
-
-This example code above actually only counts a small subset of reads
+The example code above actually only counts a small subset of reads
 from the original experiment. Nevertheless, we
 can still investigate the resulting *SummarizedExperiment* by looking at
 the counts in the `assay` slot, the phenotypic data about the samples in
@@ -330,8 +369,26 @@ The `colData` slot, so far empty, should contain all the metadata.
 We hence assign our sample table to it:
 
 ```{r}
-(colData(se) <- DataFrame(sampleTable))
+colData(se) <- DataFrame(sampleTable)
 ```
+
+## featureCounts from Rsubread
+
+We could have also counted the fragments which align to each gene
+using the *featureCounts* function from the `r Biocpkg("Rsubread")`
+package. Here we show an example of counting, using only the
+first file from the vector of 8 files. This function
+produces a *list* with the count matrix called *counts*.
+
+```{r}
+library(Rsubread)
+fc <- featureCounts(filenames[1], annot.ext=gtffile,
+                    isGTFAnnotationFile=TRUE, isPairedEnd=TRUE)
+names(fc)
+head(fc$counts)
+```
+
+## Branching point for statistical analysis
 
 At this point, we have counted the reads which overlap the genes in
 the gene model we specified. This is a branching point where we could
@@ -339,7 +396,8 @@ use a variety of Bioconductor packages for exploration and
 differential expression of the counts, including
 `r Biocpkg("edgeR")`, `r Biocpkg("BaySeq")`,
 `r Biocpkg("DSS")` and `r Biocpkg("limma")`.
-We will continue, using `r Biocpkg("DESeq2")`. The *SummarizedExperiment* object is
+We will continue, using `r Biocpkg("DESeq2")`.
+The *SummarizedExperiment* object (or count matrix and sample table)
 all we need to start our analysis. In the following section we will
 show how to use it to create the data object used by `r Biocpkg("DESeq2")`.
 
@@ -1305,6 +1363,10 @@ url <- finish(htmlRep)
 browseURL(url)
 ```
 
+<a id="align"></a>
+
+# Examining RNA-seq alignments 
+
 # Session information
 
 As last part of this document, we call the function *sessionInfo*,
@@ -1320,4 +1382,3 @@ with all code used in the analysis.
 ```{r}
 sessionInfo()
 ```
-
