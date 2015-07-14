@@ -1319,6 +1319,37 @@ browseURL(url)
 
 ## Examining RNA-seq alignments 
 
+```{r}
+library("GenomicAlignments")
+total.range <- range(unlist(range(ebg)), ignore.strand=TRUE)
+indexBam(filenames[1])
+ga <- readGAlignmentPairs(filenames[1], param=ScanBamParam(which=total.range))
+```
+
+```{r simplecov}
+cov <- coverage(ga)
+cov[total.range * 2]
+cov.numeric <- as.numeric(cov[total.range * 2][[1]])
+plot(cov.numeric, cex=.1)
+```
+
+```{r gvizplot}
+library("Gviz")
+options(ucscChromosomeNames=FALSE)
+grtrack <- GeneRegionTrack(txdb)
+gtrack <- GenomeAxisTrack()
+altrack <- AlignmentsTrack(filenames[1])
+plotTracks(list(gtrack, grtrack, altrack),
+           from=11.07e6, to=11.09e6, chromosome="1")
+```
+
+```{r gvizplot}
+altrack <- AlignmentsTrack(filenames[1], type=c("coverage","sashimi"))
+plotTracks(list(gtrack, grtrack, altrack),
+           from=11.07e6, to=11.09e6, chromosome="1")
+```
+
+
 ## Session information
 
 As last part of this document, we call the function *sessionInfo*,
