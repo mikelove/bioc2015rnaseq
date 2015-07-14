@@ -18,8 +18,8 @@ BiocStyle::markdown()
 
 Michael Love [1], Simon Anders [2], Wolfgang Huber [3]
 
-[1] Department of Biostatistics, Dana-Farber Cancer Institute and
-Harvard T.H. Chan School of Public Health, Boston, US;
+[1] Dept. of Biostatistics, Dana-Farber Cancer Institute &
+Harvard T.H.Chan School of Public Health, Boston, US;
 
 [2] Institute for Molecular Medicine Finland (FIMM), Helsinki, Finland;
 
@@ -37,9 +37,9 @@ on the Bioconductor website.
 Here we will cover basic steps in RNA-seq analysis
 using a variety of Bioconductor packages:
 
-* [Loading gene annotations](#gene) (GenomicFeatures)
+* [Loading gene annotations](#gene) (GenomicFeatures, AnnotationHub)
 * [Creating an RNA-seq count table](#count) (GenomicAlignments, Rsubread)
-* [Exploratory analysis and visualization](#eda) (DESeq2)
+* [Exploratory analysis and visualization](#eda) (DESeq2, PoiClaClu)
 * [Differential expression testing](#de) (DESeq2)
 * [Annotation of results tables](#annotate) (AnnotationDbi)
 * [Generation of HTML reports](#report) (ReportingTools)
@@ -233,7 +233,8 @@ In our directory specified earlier, we find the eight BAM files (and some other 
 list.files(dir)
 ```
 
-Typically, we have a **table with experimental metadata for our samples**.
+Typically, we have a **sample table** with experimental metadata for our samples
+(which samples were in treatment vs control, which were in batch 1 vs batch 2, etc.).
 For your own project, you might create such a comma-separated
 value (CSV) file using a text editor or spreadsheet software such as Excel.=
 We can load such a file with the function *read.csv*.
@@ -588,12 +589,11 @@ We will continue with the object generated from the
 
 <a id="eda"></a>
 
-## Exploratory analysis and visualization
+# Exploratory analysis and visualization
 
 There are two separate paths in this workflow, the one we will
 see first involves **transformations of the counts**
 in order to visualizally explore sample relationships.
-
 In the second part, we will go back to the orignal raw counts
 for **statistical testing**. This is critical because
 the statistical testing methods rely on original data
@@ -967,73 +967,7 @@ If results for an interaction term are desired, the `name`
 argument of *results* should be used. Please see the 
 help for the *results* function for more details.
 
-## Multiple testing
-
-Novices in high-throughput biology often assume that thresholding
-these *p* values at a low value, say 0.05, as is often done in other
-settings, would be appropriate -- but it is not. We briefly explain
-why:
-
-There are `r sum(res$pvalue < .05, na.rm=TRUE)` genes with a *p* value
-below 0.05 among the `r sum(!is.na(res$pvalue))` genes, for which the
-test succeeded in reporting a *p* value:
-
-```{r}
-sum(res$pvalue < 0.05, na.rm=TRUE)
-sum(!is.na(res$pvalue))
-```
-
-Now, assume for a moment that the null hypothesis is true for all
-genes, i.e., no gene is affected by the treatment with
-dexamethasone. Then, by the definition of *p* value, we expect up to
-5% of the genes to have a *p* value below 0.05. This amounts to
-`r round(sum(!is.na(res$pvalue)) * .05 )` genes.
-If we just considered the list of genes with a *p* value below 0.05 as
-differentially expressed, this list should therefore be expected to
-contain up to
-`r round(sum(!is.na(res$pvalue)) * .05)` /
-`r sum(res$pvalue < .05, na.rm=TRUE)` =
-`r round(sum(!is.na(res$pvalue))*.05 / sum(res$pvalue < .05, na.rm=TRUE) * 100)`%
- false positives.
-
-*DESeq2* uses the Benjamini-Hochberg (BH) adjustment as described in
-the base R *p.adjust* function; in brief, this method calculates for
-each gene an adjusted *p* value which answers the following question:
-if one called significant all genes with a *p* value less than or
-equal to this gene's *p* value threshold, what would be the fraction
-of false positives (the *false discovery rate*, FDR) among them (in
-the sense of the calculation outlined above)? These values, called the
-BH-adjusted *p* values, are given in the column `padj` of the `res`
-object.
-
-Hence, if we consider a fraction of 10% false positives acceptable,
-we can consider all genes with an adjusted *p* value below 10% = 0.1
-as significant. How many such genes are there?
-
-```{r}
-sum(res$padj < 0.1, na.rm=TRUE)
-```
-
-We subset the results table to these genes and then sort it by the
-log2 fold change estimate to get the significant genes with the
-strongest down-regulation.
-
-```{r}
-resSig <- subset(res, padj < 0.1)
-head(resSig[ order( resSig$log2FoldChange ), ])
-```
-
-...and with the strongest upregulation. The *order* function gives
-the indices in increasing order, so a simple way to ask for decreasing
-order is to add a `-` sign. Alternatively, you can use the argument
-`decreasing=TRUE`.
-
-
-```{r}
-head(resSig[ order( -resSig$log2FoldChange ), ])
-```
-
-## Diagnostic plots
+## Plots of test results
 
 A quick way to visualize the counts for a particular gene is to use
 the *plotCounts* function, which takes as arguments the
@@ -1103,44 +1037,6 @@ with(res[topGene, ], {
   points(baseMean, log2FoldChange, col="dodgerblue", cex=2, lwd=2)
   text(baseMean, log2FoldChange, topGene, pos=2, col="dodgerblue")
 })
-```
-
-Whether a gene is called significant depends not only on its LFC but
-also on its within-group variability, which *DESeq2* quantifies as the
-*dispersion*. For strongly expressed genes, the dispersion can be
-understood as a squared coefficient of variation: a dispersion value
-of 0.01 means that the gene's expression tends to differ by typically
-sqrt(0.01) = 10% between samples of the same treatment group. For
-weak genes, the Poisson noise is an additional source of noise.
-
-The function *plotDispEsts* visualizes *DESeq2*'s dispersion estimates: 
-
-```{r plotdispests}
-plotDispEsts(dds)
-```
-
-The black points are the dispersion estimates for each gene as
-obtained by considering the information from each gene
-separately. Unless one has many samples, these values fluctuate
-strongly around their true values. Therefore, we fit the red trend
-line, which shows the dispersions' dependence on the mean, and then
-shrink each gene's estimate towards the red line to obtain the final
-estimates (blue points) that are then used in the hypothesis test. The
-blue circles above the main "cloud" of points are genes which have
-high gene-wise dispersion estimates which are labelled as dispersion
-outliers. These estimates are therefore not shrunk toward the fitted
-trend line.
-
-Another useful diagnostic plot is the histogram of the *p* values.
-
-```{r histpvalue}
-hist(res$pvalue, breaks=20, col="grey50", border="white")
-```
-
-This plot becomes a bit smoother by excluding genes with very small counts:
-
-```{r histpvalue2}
-hist(res$pvalue[res$baseMean > 1], breaks=20, col="grey50", border="white")
 ```
 
 ## Gene clustering
