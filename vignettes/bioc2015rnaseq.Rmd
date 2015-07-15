@@ -377,7 +377,9 @@ colData(se) <- DataFrame(sampleTable)
 
 We could have also counted the fragments which align to each gene
 using the *featureCounts* function from the `r Biocpkg("Rsubread")`
-package. Here we show an example of counting, using only the
+package. Note that this package only exists for Linux and Mac
+machines, not for Windows machines.
+Here we show an example of counting, using only the
 first file from the vector of 8 files. This function
 produces a *list* with the count matrix called *counts*.
 
@@ -1229,7 +1231,7 @@ cov.numeric <- as.numeric(cov[total.range * 2][[1]])
 plot(cov.numeric, cex=.1)
 ```
 
-```{r gvizplot}
+```{r gviz}
 library("Gviz")
 options(ucscChromosomeNames=FALSE)
 grtrack <- GeneRegionTrack(txdb)
@@ -1239,7 +1241,7 @@ plotTracks(list(gtrack, grtrack, altrack),
            from=11.07e6, to=11.09e6, chromosome="1")
 ```
 
-```{r gvizplot}
+```{r gvizSashimi}
 altrack <- AlignmentsTrack(filenames[1], type=c("coverage","sashimi"))
 plotTracks(list(gtrack, grtrack, altrack),
            from=11.07e6, to=11.09e6, chromosome="1")
