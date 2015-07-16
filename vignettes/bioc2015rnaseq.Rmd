@@ -2,6 +2,11 @@
 title: "Differential expression, manipulation, and visualization of RNA-seq reads"
 author: "Michael Love, Simon Anders, Wolfgang Huber"
 date: "21 July 2015" 
+vignette: >
+  %\VignetteIndexEntry{Differential expression, manipulation, and visualization of RNA-seq reads}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+
 ---
 
 ```{r opts, echo=FALSE, results="hide"}
