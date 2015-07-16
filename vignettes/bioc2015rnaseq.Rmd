@@ -225,7 +225,7 @@ one can use the pre-built Bioconductor package:
 The *makeTxDbFromBiomart* and *makeTxDbFromUCSC* functions
 can be used to automatically pull 
 gene models from Biomart and UCSC, respectively.
-See the `r Biocpkg("GenomicFeatures")` packge for more details.
+See the `r Biocpkg("GenomicFeatures")` package for more details.
 
 <a id="count"></a>
 
