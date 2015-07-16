@@ -15,9 +15,12 @@ BiocStyle::markdown()
 ```
 
 <!--
-     # a list of all required libraries:
-	 reqlibs <- sub(".*library\\(\"(.*?)\"\\).*","\\1",grep("library\\(",readLines("bioc2015rnaseq.Rmd"),value=TRUE))
-	 find.package(reqlibs)
+
+# a list of all required libraries:
+reqlibs <- sub(".*library\\(\"(.*?)\"\\).*","\\1",
+               grep("library\\(",readLines("bioc2015rnaseq.Rmd"),value=TRUE))
+find.package(reqlibs)
+
 -->
 
 # Differential expression, manipulation, and visualization of RNA-seq reads
@@ -130,7 +133,7 @@ model underlying the methods, see the
 ## Aligning reads
 
 We will assume we have already aligned the reads to the genome
-and have **BAM files** for each of the samples. In order to see
+and have BAM files for each of the samples. In order to see
 the code which was used for this experiment to align the paired-end
 reads to the genome, see the
 [full workflow](http://bioconductor.org/help/workflows/rnaseqGene/)
@@ -386,7 +389,7 @@ colData(se) <- DataFrame(sampleTable)
 
 We could have also counted the fragments which align to each gene
 using the *featureCounts* function from the `r Biocpkg("Rsubread")`
-package. Note that this package only exists for Linux and Mac
+package. **Note:** this package only exists for Linux and Mac
 machines, not for Windows machines.
 Here we show an example of counting, using only the
 first file from the vector of 8 files. This function
@@ -413,7 +416,7 @@ The *SummarizedExperiment* object (or count matrix and sample table)
 all we need to start our analysis. In the following section we will
 show how to use it to create the data object used by `r Biocpkg("DESeq2")`.
 
-## The *DESeqDataSet*, column metadata, and the design formula
+## The *DESeqDataSet*, sample information, and the design formula
 
 Bioconductor software packages often define and use a custom class for
 their data object, which makes sure that all the needed data slots are
@@ -429,14 +432,15 @@ accessed using the *count* accessor, and the class enforces that the
 values in this matrix are non-negative integers.
 
 A second difference is that the *DESeqDataSet* has an associated
-*design formula*. The experimental design is specified at the
+**design formula**. The experimental design is specified at the
 beginning of the analysis, as it will inform many of the *DESeq2*
 functions how to treat the samples in the analysis (one exception is
 the size factor estimation, i.e., the adjustment for differing library
 sizes, which does not depend on the design formula).  The design
-formula tells which variables in the column metadata table (`colData`)
+formula tells which variables in the column metadata (`colData`)
 specify the experimental design and how these factors should be used
-in the analysis.
+in the analysis. The column metadata is where the information about the
+samples (columns of the count matrix) are stored.
 
 The simplest design formula for differential expression would be
 `~ condition`, where `condition` is a column in `colData(dds)` which
@@ -448,7 +452,8 @@ factor).
 
 You can use R's formula notation to express any experimental design
 that can be described within an ANOVA-like framework.  Note that
-*DESeq2* uses the same formula notation as, for instance, the *lm*
+*DESeq2* uses the same formula notation as, for instance, the
+linear model (*lm*)
 function of base R. If the question of interest is whether a fold
 change due to treatment is different across groups, interaction terms
 can be included using models such as
@@ -461,7 +466,7 @@ In the following sections, we will demonstrate the construction of the
 
 * from a *SummarizedExperiment* object created by, e.g.,
   *summarizeOverlaps* in the above example
-* more generally, from a count matrix and a column metadata table
+* more generally, from a count matrix and a sample information table
   which have been loaded into R 
 
 For a full example of using the *HTSeq* Python package for read
@@ -496,7 +501,7 @@ round( colSums(assay(se)) / 1e6, 1 )
 Supposing we have constructed a *SummarizedExperiment* using
 one of the methods described in the previous section, we now need to
 make sure that the object contains all the necessary information about
-the samples, i.e., a table with metadata on the count matrix's columns
+the samples, i.e., a table with information on the count matrix's columns
 stored in the `colData` slot:
 
 ```{r}
@@ -571,7 +576,7 @@ head(countdata)
 In this count matrix, each row represents an Ensembl gene, each column
 a sequenced RNA library, and the values give the raw numbers of
 sequencing reads that were mapped to the respective gene in each
-library. We also have metadata on each of the samples (the columns of the
+library. We also have information on each of the samples (the columns of the
 count matrix). If you've counted reads with some other software, you need to check at
 this step that the columns of the count matrix correspond to the rows
 of the column metadata.
@@ -583,11 +588,11 @@ coldata <- colData(se)
 We now have all the ingredients to prepare our data object in a form
 that is suitable for analysis, namely:
 
-* `countMatrix`: a table with the read counts
-* `coldata`: a table with metadata on the count matrix's columns
+* `countdata`: a table with the read counts
+* `coldata`: a table with information about the samples 
 
 To now construct the data object from the matrix of counts and the
-metadata table, we use:
+sample information table, we use:
 
 ```{r}
 (ddsMat <- DESeqDataSetFromMatrix(countData = countdata,
@@ -797,7 +802,7 @@ library("ggplot2")
 ```
 
 ```{r ggplotpca, fig.width=6, fig.height=4.5}
-qplot(PC1, PC2, color=dex, shape=cell, data=data) +
+ggplot(data, aes(PC1, PC2, color=dex, shape=cell)) + geom_point(size=3) +
   xlab(paste0("PC1: ",percentVar[1],"% variance")) +
   ylab(paste0("PC2: ",percentVar[2],"% variance"))
 ```
@@ -822,7 +827,7 @@ transformed counts:
 ```{r mdsrlog, fig.width=6, fig.height=4.5}
 mds <- data.frame(cmdscale(sampleDistMatrix))
 mds <- cbind(mds, as.data.frame(colData(rld)))
-qplot(X1,X2,color=dex,shape=cell,data=mds)
+ggplot(mds, aes(X1,X2,color=dex,shape=cell)) + geom_point(size=3)
 ```
 
 And here from the *PoissonDistance*:
@@ -830,7 +835,7 @@ And here from the *PoissonDistance*:
 ```{r mdspois, fig.width=6, fig.height=4.5}
 mds <- data.frame(cmdscale(samplePoisDistMatrix))
 mds <- cbind(mds, as.data.frame(colData(dds)))
-qplot(X1,X2,color=dex,shape=cell,data=mds)
+ggplot(mds, aes(X1,X2,color=dex,shape=cell)) + geom_point(size=3)
 ```
 
 <a id="de"></a>
@@ -978,7 +983,7 @@ If results for an interaction term are desired, the `name`
 argument of *results* should be used. Please see the 
 help for the *results* function for more details.
 
-## Plots of test results
+## Plotting counts for individual genes
 
 A quick way to visualize the counts for a particular gene is to use
 the *plotCounts* function, which takes as arguments the
@@ -997,7 +1002,7 @@ We can also make more customizable plots using the *ggplot* function from the
 data <- plotCounts(dds, gene=topGene, intgroup=c("dex","cell"), returnData=TRUE)
 ggplot(data, aes(x=dex, y=count, color=cell)) +
   scale_y_log10() + 
-  geom_point(position=position_jitter(width=.1,height=0))
+  geom_point(position=position_jitter(width=.1,height=0), size=3)
 ```
 
 Here we use a more structural arrangement instead of random jitter,
@@ -1014,9 +1019,10 @@ effect, so a more detailed plot would also show the cell lines.
 
 ```{r ggplotcountsgroup, fig.height=5}
 ggplot(data, aes(x=dex, y=count, color=cell, group=cell)) +
-  scale_y_log10() + 
-  geom_point() + geom_line()
+  scale_y_log10() + geom_point(size=3) + geom_line()
 ```
+
+## MA-plot: fold changes for all genes
 
 An "MA-plot" provides a useful overview for an experiment with a
 two-group comparison.  The log2 fold change for a particular

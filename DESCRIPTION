@@ -1,0 +1,9 @@
+Package: bioc2015rnaseq
+Title: bioc2015rnaseq
+Version: 1.0.0
+Authors: Michael Love, Simon Anders, Wolfgang Huber
+Description: An RNA-seq workflow designed for Bioc2015
+Suggests: knitr, BiocStyle, airway, GenomicFeatures, AnnotationHub, Rsamtools,
+GenomicAlignments, Rsubread, DESeq2, pheatmap, RColorBrewer, PoiClaClu,
+ggplot2, genefilter, AnnotationHub, org.Hs.eg.db, ReportingTools, Gviz
+License: Artistic
