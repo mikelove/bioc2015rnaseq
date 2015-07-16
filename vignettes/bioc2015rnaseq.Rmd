@@ -14,6 +14,12 @@ library("BiocStyle")
 BiocStyle::markdown()
 ```
 
+<!--
+     # a list of all required libraries:
+	 reqlibs <- sub(".*library\\(\"(.*?)\"\\).*","\\1",grep("library\\(",readLines("bioc2015rnaseq.Rmd"),value=TRUE))
+	 find.package(reqlibs)
+-->
+
 # Differential expression, manipulation, and visualization of RNA-seq reads
 
 Michael Love [1], Simon Anders [2], Wolfgang Huber [3]
@@ -152,7 +158,7 @@ Ensembl's FTP site or other gene model repositories.
 We first need to load our data package, which contains the
 GTF file (and small example BAM files and count matrix).
 
-```{r}
+```{r message=FALSE}
 library("airway")
 ```
 
@@ -169,9 +175,9 @@ dir <- system.file("extdata", package="airway", mustWork=TRUE)
 gtffile <- file.path(dir, "Homo_sapiens.GRCh37.75_subset.gtf")
 ```
 
-The following line creates the *TxDb*.
+Now we can create the *TxDb*.
 
-```{r}
+```{r message=FALSE}
 library("GenomicFeatures")
 txdb <- makeTxDbFromGFF(gtffile, format="gtf")
 ```
@@ -192,9 +198,12 @@ Below we show an example of how you could construct a
 *TxDb* for Saccharomyces cerevisiae from the Ensembl resource.
 Browse the *AnnotationHub* vignettes for more details on usage.
 
-```{r annohub}
-library(AnnotationHub)
+```{r annohub, message=FALSE, warning=FALSE}
+library("AnnotationHub")
 ah <- AnnotationHub()
+```
+
+```{r}
 qu <- query(ah, c("Ensembl","gtf","Saccharomyces cerevisiae","release-80"))
 stopifnot(length(qu) == 1) # check there was only one match
 gtf <- qu[[1]] # this actually downloads the gene model
@@ -260,7 +269,7 @@ We indicate in Bioconductor that these files are BAM files using the
 specify details about how the BAM files should
 be treated, e.g., only process 2 million reads at a time.
 
-```{r}
+```{r message=FALSE}
 library("Rsamtools")
 bamfiles <- BamFileList(filenames, yieldSize=2000000)
 ```
@@ -285,7 +294,7 @@ an experiment, and will be described in more detail below.
 the *register* and *MulticoreParam* functions from the
 `r Biocpkg("BiocParallel")` package before the counting call below.
 
-```{r}
+```{r message=FALSE}
 library("GenomicAlignments")
 ```
 
@@ -383,8 +392,8 @@ Here we show an example of counting, using only the
 first file from the vector of 8 files. This function
 produces a *list* with the count matrix called *counts*.
 
-```{r}
-library(Rsubread)
+```{r message=FALSE}
+library("Rsubread")
 fc <- featureCounts(filenames[1], annot.ext=gtffile,
                     isGTFAnnotationFile=TRUE, isPairedEnd=TRUE)
 names(fc)
@@ -511,7 +520,7 @@ we can construct a *DESeqDataSet* object from it, which will then form
 the starting point of the actual *DESeq2* package, described in the
 following sections. We add an appropriate design for the analysis.
 
-```{r}
+```{r message=FALSE}
 library("DESeq2")
 ```
 
@@ -696,7 +705,7 @@ our samples constitute the columns.
 We visualize the distances in a heatmap, using the function
 *pheatmap* from the `r CRANpkg("pheatmap")` package.
 
-```{r}
+```{r message=FALSE}
 library("pheatmap")
 library("RColorBrewer")
 ```
@@ -733,7 +742,7 @@ between samples.  The *PoissonDistance* function takes the original
 count matrix (not normalized) with samples as rows instead of columns,
 so we need to transpose the counts in `dds`.
 
-```{r}
+```{r message=FALSE}
 library("PoiClaClu")
 poisd <- PoissonDistance(t(counts(dds)))
 ```
@@ -783,7 +792,7 @@ We can then use this data to build up the plot, specifying that the
 color of the points should reflect dexamethasone treatment and the
 shape should reflect the cell line.
 
-```{r}
+```{r message=FALSE}
 library("ggplot2")
 ```
 
@@ -1052,7 +1061,7 @@ for demonstration, let us select the 35 genes with the highest
 variance across samples. We will work with the *rlog* transformed
 counts:
 
-```{r}
+```{r message=FALSE}
 library("genefilter")
 topVarGenes <- head(order(-rowVars(assay(rld))),20)
 ```
@@ -1087,7 +1096,7 @@ various ID schemes to each other.
 We load the `r Biocpkg("AnnotationDbi")` package and the annotation package
 `r Biocannopkg("org.Hs.eg.db")`:
 
-```{r}
+```{r message=FALSE}
 library("AnnotationDbi")
 library("org.Hs.eg.db")
 ```
@@ -1146,7 +1155,7 @@ Bioconductor analysis packages is the `r Biocpkg("ReportingTools")` package.
 including links to external databases using gene identifiers
 and boxplots summarizing the normalized counts across groups.
 
-```{r}
+```{r message=FALSE}
 library("ReportingTools")
 ```
 
@@ -1217,21 +1226,53 @@ browseURL(url)
 
 ## Examining RNA-seq alignments 
 
+Here we will show some basic techniques for examining RNA-seq
+alignments in R, using the `r Biocpkg("GenomicAlignments")`
+and the `r Biocpkg("Gviz")` packages. First we will define a
+*GRange* which covers the subset of genes we loaded in the
+beginning of this workflow. In preparation for loading the
+alignments into R, we also need to create an index file for the
+BAM file we will be reading alignments from.
+
 ```{r}
-library("GenomicAlignments")
-total.range <- range(unlist(range(ebg)), ignore.strand=TRUE)
+total.range <- GRanges("1", IRanges(11e6, 11.4e6))
 indexBam(filenames[1])
-ga <- readGAlignmentPairs(filenames[1], param=ScanBamParam(which=total.range))
 ```
+
+Now we can read in the alignments from the BAM file, and
+we can specify that we only want to read in the alignments
+from a specific region using `ScamBamParam`. 
+
+```{r}
+ga <- readGAlignmentPairs(filenames[1], param=ScanBamParam(which=total.range))
+ga
+```
+
+Note that without specifying a region, or without setting `yieldSize`
+while defining a `BamFile`, this would start to load all the
+alignments into your R session, which would likely take up too much
+memory.
+
+There are now a couple of methods defined for *GAlignmentPairs* objects,
+which can be found on the help page `?GAlignmentPairs`. One of these is
+to compute the genomic coverage. We can then look at the coverage over
+a small area, convert this to a numeric vector and plot it using base R
+graphics. 
 
 ```{r simplecov}
 cov <- coverage(ga)
-cov[total.range * 2]
-cov.numeric <- as.numeric(cov[total.range * 2][[1]])
-plot(cov.numeric, cex=.1)
+zoom <- GRanges("1", IRanges(11.07e6, 11.09e6))
+cov[zoom]
+cov.numeric <- as.numeric(cov[zoom][[1]])
+plot(cov.numeric, type="h")
 ```
 
-```{r gviz}
+Now we will use the `r Biocpkg("Gviz")` package to make a more sophisticated
+version of this plot. See the vignette and help files for *Gviz* for more
+details on each function and its arguments.
+
+
+```{r gviz, message=FALSE}
 library("Gviz")
 options(ucscChromosomeNames=FALSE)
 grtrack <- GeneRegionTrack(txdb)
@@ -1241,9 +1282,47 @@ plotTracks(list(gtrack, grtrack, altrack),
            from=11.07e6, to=11.09e6, chromosome="1")
 ```
 
+The above plot includes diagrams for each alignment. We can simplify
+this visualization by just showing the coverage and the exon junction
+coverage, similar to the [sashimi plot](https://www.broadinstitute.org/igv/Sashimi)
+which can be viewed in IGV.
+
 ```{r gvizSashimi}
 altrack <- AlignmentsTrack(filenames[1], type=c("coverage","sashimi"))
 plotTracks(list(gtrack, grtrack, altrack),
+           from=11.07e6, to=11.09e6, chromosome="1")
+```
+
+Suppose now we want to know, of the transcripts which can be
+viewed in this window, for which are most of the RNA-seq fragments
+compatible? Here, *compatible* means that the junctions in
+the aligned reads pairs must be compatible with the exon-exon junctions
+of the transcript.
+
+```{r}
+ebt <- exonsBy(txdb, by="tx")
+ebt.sub <- ebt[ebt %over% zoom]
+fco <- findCompatibleOverlaps(ga, ebt.sub)
+fco
+```
+
+We can investigate this *Hits* object, and tally the
+number of fragments comptabible with each transcript.
+We then save the top transcript, by fragment count.
+
+```{r}
+(tab <- table(subjectHits(fco)))
+ebt.top <- ebt.sub[names(tab)[which.max(tab)]]
+```
+
+Now we can use *GeneRegionTrack* again, this time
+providing a *GRangesList* with the single top
+transcript. The *Gviz* package has many options
+for visualization and different data input.
+
+```{r gvizebttop}
+grtrack2 <- GeneRegionTrack(ebt.top)
+plotTracks(list(gtrack, grtrack2, altrack),
            from=11.07e6, to=11.09e6, chromosome="1")
 ```
 
