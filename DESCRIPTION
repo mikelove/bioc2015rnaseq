@@ -7,3 +7,4 @@ Suggests: knitr, BiocStyle, airway, GenomicFeatures, AnnotationHub, Rsamtools,
   GenomicAlignments, Rsubread, DESeq2, pheatmap, RColorBrewer, PoiClaClu,
   ggplot2, genefilter, AnnotationHub, org.Hs.eg.db, ReportingTools, Gviz
 License: Artistic
+VignetteBuilder: knitr
