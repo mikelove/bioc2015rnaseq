@@ -206,12 +206,12 @@ Below we show an example of how you could construct a
 *TxDb* for Saccharomyces cerevisiae from the Ensembl resource.
 Browse the *AnnotationHub* vignettes for more details on usage.
 
-```{r annohub, message=FALSE, warning=FALSE}
+```{r annohub, message=FALSE, results="hide"}
 library("AnnotationHub")
 ah <- AnnotationHub()
 ```
 
-```{r}
+```{r results="hide"}
 qu <- query(ah, c("Ensembl","gtf","Saccharomyces cerevisiae","release-80"))
 stopifnot(length(qu) == 1) # check there was only one match
 gtf <- qu[[1]] # this actually downloads the gene model
