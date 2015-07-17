@@ -225,7 +225,7 @@ one can use the pre-built Bioconductor package:
 The *makeTxDbFromBiomart* and *makeTxDbFromUCSC* functions
 can be used to automatically pull 
 gene models from Biomart and UCSC, respectively.
-See the `r Biocpkg("GenomicFeatures")` packge for more details.
+See the `r Biocpkg("GenomicFeatures")` package for more details.
 
 <a id="count"></a>
 
@@ -418,7 +418,7 @@ differential expression of the counts, including
 `r Biocpkg("DSS")` and `r Biocpkg("limma")`.
 We will continue, using `r Biocpkg("DESeq2")`.
 The *SummarizedExperiment* object (or count matrix and sample table)
-all we need to start our analysis. In the following section we will
+is all we need to start our analysis. In the following section we will
 show how to use it to create the data object used by `r Biocpkg("DESeq2")`.
 
 ## The *DESeqDataSet*, sample information, and the design formula
